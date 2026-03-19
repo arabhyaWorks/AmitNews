@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import axios from 'axios';
 import { useLanguage } from '../contexts/LanguageContext';
 import { NewsCard, NewsCardSkeleton } from '../components/news/NewsCard';
@@ -46,6 +47,13 @@ export default function CategoryPage() {
 
   return (
     <div className="min-h-screen bg-[#faf9f6]" data-testid="category-page">
+      <Helmet>
+        <title>{`${categoryName} ${isHindi ? 'समाचार' : 'News'} | Samachar Group`}</title>
+        <meta name="description" content={isHindi ? `${categoryName} की नवीनतम खबरें और अपडेट।` : `Read the latest ${categoryName} news, updates, and analysis.`} />
+        <meta property="og:title" content={`${categoryName} News | Samachar Group`} />
+        {categoryImage && <meta property="og:image" content={categoryImage} />}
+      </Helmet>
+
       {/* Hero Banner */}
       <div className="relative h-48 md:h-64 overflow-hidden">
         <img 

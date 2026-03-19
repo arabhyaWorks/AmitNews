@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import axios from 'axios';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
@@ -113,8 +114,22 @@ export default function ArticlePage() {
   const content = isHindi && article.content_hi ? article.content_hi : article.content;
   const categoryName = t(article.category.toLowerCase());
 
+  // Create a plain text summary for SEO description
+  const plainTextContent = content ? content.replace(/<[^>]+>/g, '') : '';
+  const seoDescription = plainTextContent.substring(0, 160) + (plainTextContent.length > 160 ? '...' : '');
+
   return (
     <div className="min-h-screen bg-[#faf9f6]" data-testid="article-page">
+      <Helmet>
+        <title>{`${title} | ${isHindi ? 'समाचार ग्रुप' : 'Samachar Group'}`}</title>
+        <meta name="description" content={seoDescription} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={seoDescription} />
+        <meta property="og:type" content="article" />
+        {article.image_url && <meta property="og:image" content={article.image_url} />}
+        <meta property="og:url" content={window.location.href} />
+        <meta name="twitter:card" content="summary_large_image" />
+      </Helmet>
 
       {/* Hero Image */}
       {article.image_url && (

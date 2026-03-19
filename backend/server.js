@@ -1,7 +1,10 @@
 require('dotenv').config();
 
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -20,6 +23,11 @@ const app = express();
 const PORT = process.env.PORT || 8001;
 
 // ============== MIDDLEWARE ==============
+
+// Basic security headers
+app.use(helmet());
+// Optional: If you serve images from external domains, you might need to tweak helmet's CSP like:
+app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" })); // Allow external images (if any)
 
 const allowedOrigins = (process.env.CORS_ORIGINS || '*').split(',').map((o) => o.trim());
 
@@ -1247,6 +1255,72 @@ function formatArticle(row) {
     views: row.views || 0,
   };
 }
+
+// ============== FRONTEND SERVING & SEO INJECTION ==============
+
+app.use(express.static(path.join(__dirname, '../frontend/build'), { index: false }));
+
+app.get('*', async (req, res) => {
+  const indexPath = path.join(__dirname, '../frontend/build', 'index.html');
+  
+  if (!fs.existsSync(indexPath)) {
+    return res.status(404).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+  }
+
+  let htmlData = fs.readFileSync(indexPath, 'utf8');
+
+  try {
+    if (req.path.startsWith('/article/')) {
+      const articleId = req.path.split('/')[2];
+      if (articleId) {
+        const [rows] = await pool.query('SELECT * FROM articles WHERE article_id = ?', [articleId]);
+        if (rows.length > 0) {
+          const article = rows[0];
+          const isHindi = req.headers['accept-language']?.includes('hi') || false; // Approximation
+          const title = (isHindi && article.title_hi ? article.title_hi : article.title) || '';
+          const content = (isHindi && article.content_hi ? article.content_hi : article.content) || '';
+          
+          const plainTextContent = content.replace(/<[^>]+>/g, '');
+          const seoDesc = plainTextContent.substring(0, 160) + (plainTextContent.length > 160 ? '...' : '');
+          const seoImage = article.image_url || '';
+          const fullUrl = `https://samachar.group${req.path}`;
+          
+          let metaTags = `
+        <title>${title} | Samachar Group</title>
+        <meta name="description" content="${seoDesc}" />
+        <meta property="og:title" content="${title} | Samachar Group" />
+        <meta property="og:description" content="${seoDesc}" />
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content="${fullUrl}" />
+        <meta name="twitter:card" content="summary_large_image" />
+          `.trim();
+
+          if (seoImage) {
+            metaTags += `\n        <meta property="og:image" content="${seoImage}" />`;
+          }
+
+          // Inject into the HTML <head> string
+          htmlData = htmlData.replace('<title>Emergent | Fullstack App</title>', metaTags);
+        }
+      }
+    } else {
+      // General SEO tags for root and other pages
+      const generalMetaTags = `
+        <title>Samachar Group | India's Trusted News Platform</title>
+        <meta name="description" content="Samachar Group - Breaking news, politics, sports, business, and entertainment." />
+        <meta property="og:title" content="Samachar Group | India's Trusted News Platform" />
+        <meta property="og:description" content="Latest breaking news and updates across sports, politics, entertainment, business, and technology." />
+        <meta property="og:type" content="website" />
+      `.trim();
+      
+      htmlData = htmlData.replace('<title>Emergent | Fullstack App</title>', generalMetaTags);
+    }
+  } catch (err) {
+    console.error('[SEO Injection Error]', err);
+  }
+
+  res.send(htmlData);
+});
 
 // ============== STARTUP ==============
 

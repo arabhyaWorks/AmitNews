@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import axios from 'axios';
 import { useLanguage } from '../contexts/LanguageContext';
 import { NewsCard, NewsCardSkeleton } from '../components/news/NewsCard';
@@ -72,6 +73,14 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#faf9f6]" data-testid="home-page">
+      <Helmet>
+        <title>{isHindi ? 'समाचार ग्रुप | भारत का विश्वसनीय न्यूज़ प्लेटफ़ॉर्म' : 'Samachar Group | India\'s Trusted News Platform'}</title>
+        <meta name="description" content={isHindi ? 'समाचार ग्रुप - ताज़ा खबरें, राजनीति, खेल, व्यापार और मनोरंजन।' : 'Samachar Group - Breaking news, politics, sports, business, and entertainment.'} />
+        <meta property="og:title" content="Samachar Group | India's Trusted News Platform" />
+        <meta property="og:description" content="Latest breaking news and updates across sports, politics, entertainment, business, and technology." />
+        <meta property="og:type" content="website" />
+      </Helmet>
+
       {/* Featured Section - Bento Grid */}
       <section className="max-w-7xl mx-auto px-4 py-8">
         <div className="section-divider mb-8">

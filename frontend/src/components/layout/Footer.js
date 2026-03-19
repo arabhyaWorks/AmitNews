@@ -153,12 +153,22 @@ export const Footer = () => {
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-6 flex flex-col md:flex-row items-center justify-between gap-3">
-          <p className={`text-xs text-white/35 ${font}`}>
-            © {new Date().getFullYear()}{' '}
-            {isHindi ? 'समाचार ग्रुप' : 'Samachar Group'}.{' '}
-            {t('allRightsReserved')}.
-          </p>
+        <div className="pt-6 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-3 text-center md:text-left">
+          <div className={`text-xs text-white/40 ${font} flex flex-col md:flex-row items-center gap-1.5`}>
+            <span>© {new Date().getFullYear()} {isHindi ? 'समाचार ग्रुप' : 'Samachar Group'}.</span>
+            <span className="hidden md:inline">|</span>
+            <span>
+              Designed and developed by{' '}
+              <a
+                href="https://civiccraft.in/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#f4c430] hover:text-[#f4c430]/80 font-medium transition-colors"
+              >
+                Civiccraft Online Solutions Pvt. Ltd.
+              </a>
+            </span>
+          </div>
           <div className="flex items-center gap-4">
             {['Sports', 'Politics', 'Technology', 'Business'].map((tag) => (
               <Link
