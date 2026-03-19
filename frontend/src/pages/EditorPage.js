@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { QuillEditor } from '../components/QuillEditor';
@@ -37,6 +37,10 @@ export default function EditorPage() {
     image_url: '',
     is_featured: false
   });
+  
+  // Refs for Quill editors
+  const contentEditorRef = useRef(null);
+  const contentHiEditorRef = useRef(null);
 
   const isEditing = !!articleId;
 
@@ -97,12 +101,47 @@ export default function EditorPage() {
     }));
   };
 
+  // Helper to check if HTML content is effectively empty
+  const isContentEmpty = (html) => {
+    if (!html) return true;
+    // Strip HTML tags and check if there's actual text content
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    return textContent.trim().length === 0;
+  };
+
+  // Get content directly from Quill editor DOM
+  const getEditorContent = () => {
+    const contentEditor = document.querySelector('[data-testid="content-editor"] .ql-editor');
+    const contentHiEditor = document.querySelector('[data-testid="content-hi-editor"] .ql-editor');
+    
+    let content = formData.content;
+    let content_hi = formData.content_hi;
+    
+    // Fallback: read directly from DOM if state is empty
+    if (isContentEmpty(content) && contentEditor) {
+      const html = contentEditor.innerHTML;
+      content = (html === '<p><br></p>' || html === '<p></p>') ? '' : html;
+    }
+    
+    if (isContentEmpty(content_hi) && contentHiEditor) {
+      const html = contentHiEditor.innerHTML;
+      content_hi = (html === '<p><br></p>' || html === '<p></p>') ? '' : html;
+    }
+    
+    return { content, content_hi };
+  };
+
   const handleSubmit = async (status) => {
+    // Get content from editors (with fallback to DOM)
+    const { content, content_hi } = getEditorContent();
+    
     if (!formData.title.trim()) {
       toast.error(isHindi ? 'शीर्षक आवश्यक है' : 'Title is required');
       return;
     }
-    if (!formData.content.trim()) {
+    if (isContentEmpty(content)) {
       toast.error(isHindi ? 'सामग्री आवश्यक है' : 'Content is required');
       return;
     }
@@ -116,6 +155,8 @@ export default function EditorPage() {
     try {
       const payload = {
         ...formData,
+        content,
+        content_hi,
         status
       };
 
