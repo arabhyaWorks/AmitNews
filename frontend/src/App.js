@@ -18,6 +18,7 @@ import CategoryPage from './pages/CategoryPage';
 import SearchPage from './pages/SearchPage';
 import AdminPage from './pages/AdminPage';
 import AuthorPage from './pages/AuthorPage';
+import GoogleAnalytics from './components/GoogleAnalytics';
 
 import './App.css';
 
@@ -35,6 +36,7 @@ function AppContent() {
 
   return (
     <>
+      <GoogleAnalytics />
       {showLayout && <Header />}
       <main className="min-h-screen">
         <Routes>
