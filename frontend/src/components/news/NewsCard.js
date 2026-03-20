@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { Eye, Clock } from 'lucide-react';
 
 export const NewsCard = ({ article, variant = 'default' }) => {
-  const { t, isHindi, language } = useLanguage();
+  const { t, isHindi } = useLanguage();
 
   const title = isHindi && article.title_hi ? article.title_hi : article.title;
   const categoryName = t(article.category.toLowerCase());
@@ -122,15 +122,22 @@ export const NewsCard = ({ article, variant = 'default' }) => {
       className="news-card block bg-white border border-gray-200 overflow-hidden group hover-lift"
       data-testid={`news-card-${article.article_id}`}
     >
-      {article.image_url && (
-        <div className="aspect-video overflow-hidden">
-          <img 
-            src={article.image_url} 
+      <div className="aspect-video overflow-hidden bg-gradient-to-br from-[#b91c1c] to-[#7f1d1d] relative">
+        {article.image_url ? (
+          <img
+            src={article.image_url}
             alt={title}
             className="w-full h-full object-cover news-card-image"
+            onError={e => { e.target.style.display = 'none'; }}
           />
-        </div>
-      )}
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-white/30 text-4xl font-bold font-heading select-none">
+              {(article.source_name || 'NEWS').charAt(0).toUpperCase()}
+            </span>
+          </div>
+        )}
+      </div>
       <div className="p-4">
         <div className="flex items-center gap-2 mb-3">
           <span className={`category-pill ${isHindi ? 'font-hindi' : ''}`}>
