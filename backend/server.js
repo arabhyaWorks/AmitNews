@@ -88,16 +88,18 @@ const allowedOrigins = (process.env.CORS_ORIGINS || '*').split(',').map((o) => o
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (curl, mobile apps, etc.)
+      // Allow requests with no origin (curl, mobile apps, server-to-server)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(new Error('Not allowed by CORS'));
+      // Return false (no header) rather than an Error — avoids Express turning
+      // the rejected CORS check into a 500 with no CORS headers attached.
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-Cron-Secret'],
   })
 );
 
