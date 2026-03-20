@@ -1414,6 +1414,183 @@ api.get('/public/categories', async (_req, res) => {
   }
 });
 
+// ============== CRON / RSS IMPORT ENDPOINT ==============
+
+const crypto = require('crypto');
+const { JSDOM } = require('jsdom');
+const { Readability } = require('@mozilla/readability');
+
+const RSS_AUTHOR_ID   = 'user_6a63efc5fe6b';
+const RSS_AUTHOR_NAME = 'ANIMESH';
+const RSS_MAX_AGE_DAYS = 3;
+let rssImportRunning = false;
+
+function rssUrlToId(url) {
+  return 'rss_' + crypto.createHash('md5').update(url).digest('hex').substring(0, 16);
+}
+
+function rssExtractTag(tag, content) {
+  const cdata  = new RegExp('<' + tag + '[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/' + tag + '>', 'i');
+  const normal = new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i');
+  const m = content.match(cdata) || content.match(normal);
+  return m ? m[1].replace(/<!\\[CDATA\\[|\\]\\]>/g, '').trim() : null;
+}
+
+function rssExtractAttr(tag, attr, content) {
+  const m = content.match(new RegExp('<' + tag + '[^>]*\\s' + attr + '=["\']([^"\']+)["\']', 'i'));
+  return m ? m[1] : null;
+}
+
+function rssGetImage(item) {
+  return rssExtractAttr('media:content', 'url', item)
+    || rssExtractAttr('media:thumbnail', 'url', item)
+    || rssExtractAttr('enclosure', 'url', item)
+    || null;
+}
+
+function rssStripHtml(html) {
+  return (html || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function rssMapCategory(feedCategory, rssCategory, source) {
+  const combined = ((rssCategory || '') + ' ' + (feedCategory || '') + ' ' + (source || '')).toLowerCase();
+  if (/crime|अपराध/.test(combined))              return 'crime';
+  if (/politic|राजनीति|election|चुनाव/.test(combined)) return 'politics';
+  if (/sport|खेल|cricket|football/.test(combined)) return 'sports';
+  if (/business|economy|market|व्यापार/.test(combined)) return 'business';
+  if (/tech|technology|प्रौद्योगिकी/.test(combined)) return 'technology';
+  if (/entertainment|bollywood|मनोरंजन/.test(combined)) return 'entertainment';
+  if (/health|स्वास्थ्य|medical/.test(combined))   return 'health';
+  if (/world|international|विश्व|विदेश/.test(combined)) return 'world';
+  if (/national|india|राष्ट्रीय|देश/.test(combined)) return 'national';
+  if (/uttar.?pradesh|uttar-pradesh|up news|यूपी|उत्तर प्रदेश/.test(combined)) return 'uttar-pradesh';
+  return 'local';
+}
+
+async function rssScrapeContent(url, fallbackDescription, sourceName) {
+  try {
+    const res = await axios.get(url, {
+      timeout: 12000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+        'Accept-Language': 'hi-IN,hi;q=0.9,en;q=0.8',
+      },
+      maxRedirects: 5,
+    });
+    const dom = new JSDOM(res.data, { url });
+    const parsed = new Readability(dom.window.document).parse();
+    if (parsed && parsed.textContent && parsed.textContent.trim().length > 100) {
+      const cleaned = parsed.content
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, '')
+        .trim();
+      return cleaned + `\n<p style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:0.85rem;color:#6b7280;"><a href="${url}" target="_blank" rel="noopener">Read original at ${sourceName}</a></p>`;
+    }
+  } catch (_) {}
+  return fallbackDescription.length > 50
+    ? `<p>${fallbackDescription}</p><p><a href="${url}" target="_blank" rel="noopener">Read original at ${sourceName}</a></p>`
+    : `<p><a href="${url}" target="_blank" rel="noopener">Read original at ${sourceName}</a></p>`;
+}
+
+async function rssScrapeImage(articleUrl) {
+  try {
+    const res = await axios.get(articleUrl, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,*/*',
+      },
+      maxRedirects: 5,
+    });
+    const html = res.data;
+    const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+            || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)
+            || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+    return og ? og[1] : null;
+  } catch (_) { return null; }
+}
+
+// POST /api/cron/import-rss  (protected by CRON_SECRET env var)
+app.post('/api/cron/import-rss', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers['x-cron-secret'] !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (rssImportRunning) {
+    return res.status(409).json({ error: 'Import already running' });
+  }
+
+  res.json({ message: 'RSS import started' });
+
+  rssImportRunning = true;
+  const startTime = Date.now();
+  let inserted = 0, skippedOld = 0, skippedDup = 0, feedErrors = 0;
+
+  try {
+    const sources = require('./sources.json');
+    const cutoff = new Date(Date.now() - RSS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+
+    const [existing] = await pool.query('SELECT article_id FROM articles');
+    const existingIds = new Set(existing.map(r => r.article_id));
+    const seenUrls = new Set();
+
+    for (const feed of sources.feeds) {
+      try {
+        const xmlRes = await axios.get(feed.url, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': '*/*' },
+        });
+        const xml = xmlRes.data.toString();
+        const rawItems = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+
+        for (const item of rawItems) {
+          const title = rssExtractTag('title', item);
+          if (!title || title.length < 5) continue;
+
+          const link = rssExtractTag('link', item);
+          if (!link || !link.startsWith('http')) continue;
+
+          const articleId = rssUrlToId(link);
+          if (existingIds.has(articleId) || seenUrls.has(link)) { skippedDup++; continue; }
+          seenUrls.add(link);
+
+          const pubDateStr = rssExtractTag('pubDate', item) || rssExtractTag('pubdate', item);
+          let pubDate = pubDateStr ? new Date(pubDateStr) : null;
+          if (!pubDate || isNaN(pubDate)) pubDate = new Date();
+          if (pubDate < cutoff) { skippedOld++; continue; }
+
+          const description = rssStripHtml(rssExtractTag('description', item) || '');
+          const rssCategory = rssExtractTag('category', item);
+          const category    = rssMapCategory(feed.category, rssCategory, feed.source);
+          let   image       = rssGetImage(item);
+          const content     = await rssScrapeContent(link, description, feed.source);
+
+          // Fetch og:image if no RSS image
+          if (!image) image = await rssScrapeImage(link);
+
+          await pool.execute(
+            `INSERT IGNORE INTO articles
+             (article_id, title, content, category, image_url, source_name, status, author_id, author_name, created_at, updated_at, views)
+             VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?, 0)`,
+            [articleId, title, content, category, image, feed.source, RSS_AUTHOR_ID, RSS_AUTHOR_NAME, pubDate, pubDate]
+          );
+          existingIds.add(articleId);
+          inserted++;
+        }
+      } catch (_) { feedErrors++; }
+    }
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[cron/import-rss] Done in ${elapsed}s — inserted:${inserted} skippedOld:${skippedOld} skippedDup:${skippedDup} feedErrors:${feedErrors}`);
+  } catch (err) {
+    console.error('[cron/import-rss] Fatal error:', err.message);
+  } finally {
+    rssImportRunning = false;
+  }
+});
+
 // ============== MOUNT ROUTER ==============
 
 app.use('/api', api);
